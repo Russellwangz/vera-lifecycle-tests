@@ -16,15 +16,15 @@ How a command gets into the suite:
    - Service is anything else (IAM, ELB, SSM, STS, CloudWatch, `aws configure`, and so on): keep the original line and label it `non-ec2`, so the real call is still visible.
 5. For each `non-ec2` line, add one more command that calls only EC2 and has a similar purpose. Label that line `augmented-ec2`. When the original script calls a non-EC2 service, the extra EC2 command lets the same script still run on an emulator that only implements EC2.
 
-`tests/test_labeled.sh` is that result: **60 realistic cases, 142 commands**. **116** are labeled `ec2`. **13** `non-ec2` calls (IAM, ELB, SSM, STS, CloudWatch, and similar) are each paired with an `augmented-ec2` stand-in.
+`tests/test_labeled.sh` is that result: **142 commands**. **116** are labeled `ec2`. **13** `non-ec2` calls (IAM, ELB, SSM, STS, CloudWatch, `aws configure`, and similar) are each paired with an `augmented-ec2` stand-in. The GitHub-sourced section of that file is numbered **TC01–TC60**, from the 16 repositories listed in the file header.
 
-Example: a script looked up the latest Amazon Linux AMI through SSM Parameter Store. The original call stays, and the EC2 stand-in lists Amazon-owned AMIs instead.
+Example, TC56: a script looked up the latest Amazon Linux AMI through SSM Parameter Store. The original call stays, and the EC2 stand-in lists Amazon-owned AMIs instead.
 
 ```bash
 # label: non-ec2
 awscli ssm get-parameters --names /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2 --region us-east-1
 # label: augmented-ec2
-awscli ec2 describe-images --owners amazon --filters 'Name=name,Values=amzn2-ami-hvm-*'
+awscli ec2 describe-images --owners amazon --filters 'Name=name,Values=amzn2-ami-hvm-*' 'Name=state,Values=available' --query 'Images[:1].ImageId' --output text
 ```
 
 These cases are not single-flag examples. They use tag and VPC filters, JMESPath `--query` projections over nested fields (security-group rules, routes, instance placement), and multi-command setups where a later step depends on an earlier one.
@@ -61,7 +61,7 @@ There are two layers. They use the same shape.
 3. It writes the same steps, in the same order, into `tests/test_lifecycle_bundle.sh`. Each scenario is marked `# -- <name> --`, and each command is marked `# label: lifecycle-file:<name>`.
 4. A modify variant keeps the same create and delete and only changes the middle step. Volumes alone are split that way: resize, volume type, IOPS, throughput, combined type/IOPS/size, and `modify-volume-attribute` (`volume-lifecycle-v2` through `volume-lifecycle-v7`).
 
-That produces **79 generated lifecycle RST files** covering **53 EC2 resource types**, including **26 modify-variant files**. The runnable bundle currently has **71 scenarios and 386 commands** across VPCs, subnets, volumes, instances, security groups, gateways, transit gateways, and related resources.
+`tests/cli/ec2` contains **79 lifecycle RST files**: **53** resource types, plus **26** modify-variant files. `LIFECYCLE_TESTS` writes **71** of those scenarios into RST and into `tests/test_lifecycle_bundle.sh` (**386** commands), across VPCs, subnets, volumes, instances, security groups, gateways, transit gateways, and related resources. Eight RST files are in the tree and are not entries in the generator or the bundle: `customer-gateway-lifecycle`, `network-interface-lifecycle`, `placement-group-lifecycle`, `volume-lifecycle`, `vpc-endpoint-lifecycle`, `vpc-endpoint-service-lifecycle`, `vpc-lifecycle`, and `vpc-peering-connection-lifecycle`. The hand-written suite still covers those resources.
 
 One volume chain looks like this. Every step after create uses the same placeholder volume ID:
 
@@ -83,7 +83,7 @@ aws ec2 delete-volume --volume-id vol-1234567890abcdef0
 4. Before the next command in that scenario, placeholders such as `vpc-0a60eb65b4EXAMPLE` are rewritten to that real ID. Describe, modify, and delete then hit the resource that was just created.
 5. After create, modify, and delete, a follow-up describe checks that modified fields stuck and that delete actually removed the resource.
 
-`tests/extract_lifecycle_v2_v6_subset.py` copies only the `*-lifecycle-vN` sections (N ≥ 2) into `tests/test_lifecycle_v2_v6_subset.sh`. `tests/run_lifecycle_v2_v6_subset.sh` runs that subset with `--lifecycle`.
+`tests/extract_lifecycle_v2_v6_subset.py` copies every `*-lifecycle-vN` section with N ≥ 2, including `volume-lifecycle-v7`, into `tests/test_lifecycle_v2_v6_subset.sh` (26 scenarios). `tests/run_lifecycle_v2_v6_subset.sh` runs that subset with `--lifecycle`.
 
 ## Run
 
